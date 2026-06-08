@@ -225,15 +225,14 @@ const updateWorker = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Error al actualizar postulante.' });
-    }
+    };
+
     const getSyncPull = async (req, res) => {
         try {
-            const cargosRes = await db.query(`
-            SELECT c.id, c.nombre, COALESCE(m.limite_vacantes, 0) as meta 
-            FROM cargos c 
-            LEFT JOIN metas_cargos m ON c.id = m.cargo_id
-            ORDER BY c.id ASC
-        `);
+            const cargosRes = await db.query('SELECT id, nombre FROM cargos ORDER BY id ASC');
+            const metasCargosRes = await db.query('SELECT cargo_id, limite_vacantes FROM metas_cargos');
+            const tipoPostulanteRes = await db.query('SELECT id, descripcion FROM tipo_postulante');
+            const parametrosAsistenciaRes = await db.query('SELECT estado, descripcion FROM parametros_asistencia');
 
             const workersRes = await db.query(`
             SELECT id, sede_reg, sede_juris, doc_identidad as dni, ape_pat, ape_mat, nombres, local as area, 
@@ -249,6 +248,9 @@ const updateWorker = async (req, res) => {
 
             res.json({
                 cargos: cargosRes.rows,
+                metas_cargos: metasCargosRes.rows,
+                tipo_postulante: tipoPostulanteRes.rows,
+                parametros_asistencia: parametrosAsistenciaRes.rows,
                 workers: workersRes.rows,
                 asistencias: asistenciasRes.rows
             });
