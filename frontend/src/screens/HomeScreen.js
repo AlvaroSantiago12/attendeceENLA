@@ -1,14 +1,95 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, ScrollView, RefreshControl, Dimensions, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View, StyleSheet, Text, TouchableOpacity,
+  ScrollView, RefreshControl, Dimensions, Alert, Animated, StatusBar, Image,
+} from 'react-native';
 import { Surface, ActivityIndicator, IconButton, Portal, Modal, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { COLORS } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 60) / 2;
+const COL = (width - 52) / 2;
 
+// ── Stat card ─────────────────────────────────────────────────────────────────
+const StatCard = ({ value, label, color, icon, onPress }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const handleIn = () => Animated.spring(scaleAnim, { toValue: 0.94, useNativeDriver: true, speed: 50 }).start();
+  const handleOut = () => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
+
+  return (
+    <Animated.View style={{ transform: [{ scale: scaleAnim }], flex: 1 }}>
+      <TouchableOpacity onPress={onPress} onPressIn={handleIn} onPressOut={handleOut} activeOpacity={0.9}>
+        <View style={[styles.statCard, { borderTopColor: color }]}>
+          <View style={[styles.statIconWrap, { backgroundColor: color + '18' }]}>
+            <MaterialCommunityIcons name={icon} size={28} color={color} />
+          </View>
+          <Text style={[styles.statValue, { color }]}>{value ?? 0}</Text>
+          <Text style={styles.statLabel}>{label.toUpperCase()}</Text>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+// ── Menu button ───────────────────────────────────────────────────────────────
+const MenuBtn = ({ title, icon, themeColor, onPress, fullWidth = false, solid = false }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const handleIn = () => Animated.spring(scaleAnim, { toValue: 0.96, useNativeDriver: true, speed: 50 }).start();
+  const handleOut = () => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
+
+  if (solid) {
+    return (
+      <Animated.View style={[
+        { transform: [{ scale: scaleAnim }] },
+        styles.marcacionWrapper
+      ]}>
+        <TouchableOpacity
+          onPress={onPress}
+          onPressIn={handleIn}
+          onPressOut={handleOut}
+          activeOpacity={0.9}
+          style={styles.menuBtnMarcacion}
+        >
+          <View style={styles.menuInnerMarcacion}>
+            <MaterialCommunityIcons name={icon} size={36} color="#FFFFFF" />
+            <Text style={styles.menuTitleMarcacion}>{title.toUpperCase()}</Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  }
+
+  return (
+    <Animated.View style={[
+      { transform: [{ scale: scaleAnim }] },
+      fullWidth ? { width: '100%', marginBottom: 4 } : { width: COL },
+    ]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={handleIn}
+        onPressOut={handleOut}
+        activeOpacity={0.9}
+        style={[styles.menuBtnGrid, { borderColor: themeColor, width: '100%' }]}
+      >
+        <View style={styles.watermarkIconWrap}>
+          <MaterialCommunityIcons name={icon} size={85} color={themeColor} />
+        </View>
+        <View style={styles.menuInnerGrid}>
+          <MaterialCommunityIcons name={icon} size={36} color={themeColor} />
+          <Text style={[styles.menuTitleGrid, { color: themeColor }]}>{title.toUpperCase()}</Text>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  HomeScreen
+// ═══════════════════════════════════════════════════════════════
 const HomeScreen = ({ navigation }) => {
   const [stats, setStats] = useState({ presentes: 0, faltas: 0, tardanzas: 0, temprano: 0 });
   const [loading, setLoading] = useState(true);
@@ -16,16 +97,25 @@ const HomeScreen = ({ navigation }) => {
   const [userName, setUserName] = useState('');
   const [isOnline, setIsOnline] = useState(true);
 
-  // Debug state
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugData, setDebugData] = useState(null);
 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      setIsOnline(!!state.isConnected);
-    });
+    const unsubscribe = NetInfo.addEventListener(state => setIsOnline(!!state.isConnected));
     return () => unsubscribe();
   }, []);
+
+  const animateIn = () => {
+    fadeAnim.setValue(0);
+    slideAnim.setValue(20);
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, speed: 12, useNativeDriver: true }),
+    ]).start();
+  };
 
   const fetchStats = async () => {
     try {
@@ -39,29 +129,18 @@ const HomeScreen = ({ navigation }) => {
 
       if (online) {
         try {
-          const response = await fetch('https://backend-6oio.onrender.com/api/attendance/stats', {
+          const res = await fetch('https://backend-6oio.onrender.com/api/attendance/stats', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
-          
-          if (response.status === 401 || response.status === 403) {
-            handleLogout();
-            return;
-          }
-
-          if (response.ok) {
-            const data = await response.json();
-            setStats(data);
-            return;
-          }
-        } catch (fetchErr) {
-          console.log('Error fetching stats online, falling back to local SQLite:', fetchErr.message);
-        }
+          if (res.status === 401 || res.status === 403) { handleLogout(); return; }
+          if (res.ok) { setStats(await res.json()); animateIn(); return; }
+        } catch { }
       }
-
       const localStats = await global.dbHelper.getStats();
       setStats(localStats);
-    } catch (error) {
-      console.error('Error fetching stats:', error);
+      animateIn();
+    } catch (e) {
+      console.error('Error fetching stats:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -73,20 +152,12 @@ const HomeScreen = ({ navigation }) => {
     navigation.replace('Login');
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchStats();
-    }, [])
-  );
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchStats();
-  };
+  useFocusEffect(useCallback(() => { fetchStats(); }, []));
+  const onRefresh = () => { setRefreshing(true); fetchStats(); };
 
   const fetchDebugData = async () => {
-    const diagnostics = await global.dbHelper.getDbDiagnostics();
-    setDebugData(diagnostics);
+    const d = await global.dbHelper.getDbDiagnostics();
+    setDebugData(d);
   };
 
   const handleOpenDebug = async () => {
@@ -94,511 +165,388 @@ const HomeScreen = ({ navigation }) => {
     setDebugVisible(true);
   };
 
-  const renderDebugModal = () => {
-    return (
-      <Portal>
-        <Modal
-          visible={debugVisible}
-          onDismiss={() => setDebugVisible(false)}
-          contentContainerStyle={styles.debugModal}
-        >
-          <Text style={styles.debugTitle}>Panel de Diagnóstico & Sincronización</Text>
-          
-          <Surface style={styles.debugStatusCard} elevation={0}>
-            <View style={styles.debugRow}>
-              <MaterialCommunityIcons 
-                name={isOnline ? "wifi" : "wifi-off"} 
-                size={20} 
-                color={isOnline ? "#15803D" : "#B91C1C"} 
-              />
-              <Text style={[styles.debugStatusText, { color: isOnline ? "#15803D" : "#B91C1C" }]}>
-                {isOnline ? 'CONECTADO (ONLINE)' : 'SIN CONEXIÓN (OFFLINE)'}
-              </Text>
-            </View>
-          </Surface>
-
-          <Text style={styles.debugSubtitle}>Estadísticas SQLite Local:</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.debugStatCol}>
-              <Text style={styles.debugStatNum}>{debugData?.principalCount ?? '-'}</Text>
-              <Text style={styles.debugStatLabel}>Postulantes</Text>
-            </View>
-            <View style={styles.debugStatCol}>
-              <Text style={styles.debugStatNum}>{debugData?.asistenciasCount ?? '-'}</Text>
-              <Text style={styles.debugStatLabel}>Asistencias Hoy</Text>
-            </View>
-            <View style={styles.debugStatCol}>
-              <Text style={styles.debugStatNum}>{debugData?.cargosCount ?? '-'}</Text>
-              <Text style={styles.debugStatLabel}>Cargos</Text>
-            </View>
-            <View style={styles.debugStatCol}>
-              <Text style={[styles.debugStatNum, (debugData?.queue?.length > 0) && { color: '#B91C1B' }]}>
-                {debugData?.queue?.length ?? 0}
-              </Text>
-              <Text style={styles.debugStatLabel}>Cola Pendiente</Text>
-            </View>
-          </View>
-
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, paddingHorizontal: 5 }}>
-            <Text style={{ fontSize: 10, color: '#64748B', fontWeight: 'bold' }}>METAS: {debugData?.metasCount ?? 0}</Text>
-            <Text style={{ fontSize: 10, color: '#64748B', fontWeight: 'bold' }}>TIPOS: {debugData?.tiposCount ?? 0}</Text>
-            <Text style={{ fontSize: 10, color: '#64748B', fontWeight: 'bold' }}>PARAMS: {debugData?.paramsCount ?? 0}</Text>
-          </View>
-
-          {debugData?.queue?.length > 0 && (
-            <>
-              <Text style={styles.debugSubtitle}>Cola de Operaciones:</Text>
-              <ScrollView style={{ maxHeight: 110, marginBottom: 15 }} nestedScrollEnabled>
-                {debugData.queue.map((item) => {
-                  let payload = {};
-                  try { payload = JSON.parse(item.payload); } catch(e){}
-                  const detail = payload.dni || payload.nombre || `ID Temp: ${payload.tempId}`;
-                  return (
-                    <View key={item.id} style={styles.queueItem}>
-                      <Text style={styles.queueType}>{item.action_type}</Text>
-                      <Text style={styles.queueDetail}>{detail}</Text>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </>
-          )}
-
-          <View style={styles.debugActions}>
-            <Button 
-              mode="contained" 
-              buttonColor="#334155" 
-              onPress={async () => {
-                if (!isOnline) {
-                  Alert.alert('Aviso', 'Se requiere conexión a internet para sincronizar.');
-                  return;
-                }
-                Alert.alert('Sincronizando', 'Procesando la cola local...');
-                await global.dbHelper.syncQueue();
-                await fetchDebugData();
-                fetchStats();
-              }}
-              style={styles.debugBtn}
-              disabled={!isOnline}
-            >
-              Procesar Cola
-            </Button>
-
-            <Button 
-              mode="outlined" 
-              textColor="#334155"
-              onPress={async () => {
-                if (!isOnline) {
-                  Alert.alert('Aviso', 'Se requiere conexión a internet para descargar datos.');
-                  return;
-                }
-                Alert.alert('Descargando', 'Descargando datos del servidor...');
-                try {
-                  const token = await AsyncStorage.getItem('userToken');
-                  const res = await fetch('https://backend-6oio.onrender.com/api/attendance/sync-pull', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                  if (res.ok) {
-                    const syncData = await res.json();
-                    await global.dbHelper.clearAndPopulate(
-                      syncData.cargos,
-                      syncData.metas_cargos,
-                      syncData.tipo_postulante,
-                      syncData.parametros_asistencia,
-                      syncData.workers,
-                      syncData.asistencias
-                    );
-                    await fetchDebugData();
-                    fetchStats();
-                    Alert.alert('Exito', 'Base de datos SQLite poblada con éxito.');
-                  } else {
-                    Alert.alert('Error', `Server status: ${res.status}`);
-                  }
-                } catch (err) {
-                  Alert.alert('Error', `Error de conexión: ${err.message}`);
-                }
-              }}
-              style={styles.debugBtn}
-              disabled={!isOnline}
-            >
-              Descargar Datos
-            </Button>
-
-            <Button 
-              mode="contained-tonal" 
-              buttonColor="#FEF2F2"
-              textColor="#991B1B"
-              onPress={() => {
-                Alert.alert('Confirmación', '¿Estás seguro de que deseas limpiar la base de datos local SQLite?', [
-                  { text: 'Cancelar', style: 'cancel' },
-                  {
-                    text: 'Limpiar',
-                    style: 'destructive',
-                    onPress: async () => {
-                      await global.dbHelper.clearAndPopulate([], [], [], [], [], []);
-                      await fetchDebugData();
-                      fetchStats();
-                    }
-                  }
-                ]);
-              }}
-              style={styles.debugBtn}
-            >
-              Limpiar DB
-            </Button>
-          </View>
-
-          <Button textColor="#64748B" onPress={() => setDebugVisible(false)} style={{ marginTop: 10 }}>
-            Cerrar
-          </Button>
-        </Modal>
-      </Portal>
-    );
+  const handleSyncQueue = async () => {
+    if (!isOnline) { Alert.alert('Sin conexión', 'Se requiere internet para sincronizar.'); return; }
+    Alert.alert('Sincronizando', 'Procesando cola local...');
+    await global.dbHelper.syncQueue();
+    await fetchDebugData();
+    fetchStats();
   };
 
-  const MenuButton = ({ title, icon, color, onPress, fullWidth = false }) => (
-    <TouchableOpacity 
-      style={[styles.menuItem, fullWidth && styles.fullWidthItem]} 
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
-      <Surface style={styles.menuSurface} elevation={1}>
-        <View style={[styles.iconContainer, { backgroundColor: color }]}>
-          <MaterialCommunityIcons name={icon} size={28} color="white" />
+  const handleDownloadData = async () => {
+    if (!isOnline) { Alert.alert('Sin conexión', 'Se requiere internet para descargar.'); return; }
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const res = await fetch('https://backend-6oio.onrender.com/api/attendance/sync-pull', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const d = await res.json();
+        await global.dbHelper.clearAndPopulate(d.cargos, d.metas_cargos, d.tipo_postulante, d.parametros_asistencia, d.workers, d.asistencias);
+        await fetchDebugData();
+        fetchStats();
+        Alert.alert('Completado', `Datos descargados: ${d.workers?.length ?? 0} postulantes`);
+      } else {
+        Alert.alert('Error', `Estado del servidor: ${res.status}`);
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  // ── Debug Modal ────────────────────────────────────────────
+  const renderDebugModal = () => (
+    <Portal>
+      <Modal visible={debugVisible} onDismiss={() => setDebugVisible(false)} contentContainerStyle={styles.debugModal}>
+        <View style={styles.debugHeader}>
+          <MaterialCommunityIcons name="database-sync" size={28} color={COLORS.blue} />
+          <Text style={styles.debugTitle}>DIAGNOSTICO & SINCRONIZACION</Text>
         </View>
-        <Text style={styles.menuTitle}>{title}</Text>
-      </Surface>
-    </TouchableOpacity>
+
+        <View style={[styles.debugStatusPill, { backgroundColor: isOnline ? COLORS.successSoft : COLORS.dangerSoft, borderColor: isOnline ? COLORS.successBorder : COLORS.dangerBorder }]}>
+          <MaterialCommunityIcons name={isOnline ? 'wifi-check' : 'wifi-off'} size={24} color={isOnline ? COLORS.success : COLORS.danger} />
+          <Text style={[styles.debugStatusText, { color: isOnline ? COLORS.success : COLORS.danger }]}>
+            {isOnline ? 'CONECTADO - MODO ONLINE' : 'SIN CONEXION - MODO OFFLINE'}
+          </Text>
+        </View>
+
+        <Text style={styles.debugSubtitle}>SQLITE LOCAL</Text>
+        <View style={styles.debugGrid}>
+          {[
+            { label: 'Postulantes', value: debugData?.principalCount, color: COLORS.blue },
+            { label: 'Asistencias', value: debugData?.asistenciasCount, color: COLORS.success },
+            { label: 'Cargos', value: debugData?.cargosCount, color: COLORS.purple },
+            { label: 'Cola', value: debugData?.queue?.length ?? 0, color: debugData?.queue?.length > 0 ? COLORS.danger : COLORS.muted },
+          ].map(s => (
+            <View key={s.label} style={[styles.debugStat, { borderTopColor: s.color }]}>
+              <Text style={[styles.debugStatNum, { color: s.color }]}>{s.value ?? '-'}</Text>
+              <Text style={styles.debugStatLabel}>{s.label.toUpperCase()}</Text>
+            </View>
+          ))}
+        </View>
+
+        {(debugData?.queue?.length ?? 0) > 0 && (
+          <>
+            <Text style={styles.debugSubtitle}>COLA PENDIENTE</Text>
+            <ScrollView style={{ maxHeight: 100 }} nestedScrollEnabled>
+              {debugData.queue.map(item => {
+                let p = {}; try { p = JSON.parse(item.payload); } catch { }
+                return (
+                  <View key={item.id} style={styles.queueRow}>
+                    <MaterialCommunityIcons name="clock-alert-outline" size={16} color={COLORS.warning} />
+                    <Text style={styles.queueType}>{item.action_type}</Text>
+                    <Text style={styles.queueDetail}>{p.dni || p.nombre || `Tmp:${p.tempId}`}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </>
+        )}
+
+        <View style={{ gap: 8, marginTop: 12 }}>
+          <Button mode="contained" buttonColor={COLORS.blue} icon="sync" labelStyle={{ fontWeight: '800' }} onPress={handleSyncQueue} disabled={!isOnline}>
+            PROCESAR COLA
+          </Button>
+          <Button mode="outlined" textColor={COLORS.blue} icon="cloud-download" labelStyle={{ fontWeight: '800' }} onPress={handleDownloadData} disabled={!isOnline}>
+            DESCARGAR DATOS
+          </Button>
+          <Button mode="contained-tonal" buttonColor={COLORS.dangerSoft} textColor={COLORS.danger} icon="delete-sweep" labelStyle={{ fontWeight: '800' }}
+            onPress={() => Alert.alert('¿LIMPIAR DB?', 'Se borrara toda la base de datos local.', [
+              { text: 'CANCELAR', style: 'cancel' },
+              { text: 'LIMPIAR', style: 'destructive', onPress: async () => { await global.dbHelper.clearAndPopulate([], [], [], [], [], []); await fetchDebugData(); fetchStats(); } }
+            ])}>
+            LIMPIAR DB LOCAL
+          </Button>
+          <Button textColor={COLORS.muted} labelStyle={{ fontWeight: '800' }} onPress={() => setDebugVisible(false)}>CERRAR</Button>
+        </View>
+      </Modal>
+    </Portal>
   );
 
+  // ── Render ────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#334155" />
-        }
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.blue} />
+
+      {/* ── Top header gradient ─────────────────────────────── */}
+      <View
+        style={[styles.topHeader, { backgroundColor: COLORS.blue }]}
       >
-        <View style={styles.headerRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.welcomeText}>Bienvenido de nuevo,</Text>
-            <Text style={styles.userName} numberOfLines={1}>{userName || 'Administrador'}</Text>
+        <View style={styles.topHeaderInner}>
+          <View>
+            <Text style={styles.welcomeLabel}>BIENVENIDO DE NUEVO,</Text>
+            <Text style={styles.userName} numberOfLines={1}>{(userName || 'Administrador').toUpperCase()}</Text>
           </View>
           <View style={styles.headerActions}>
-            <IconButton 
-              icon={isOnline ? "wifi" : "wifi-off"} 
-              iconColor={isOnline ? "#15803D" : "#B91C1C"} 
-              size={22} 
-              onPress={() => Alert.alert('Estado de Red', isOnline ? 'El dispositivo está en línea (Conectado al servidor Render)' : 'El dispositivo está fuera de línea (Modo SQLite local)')}
-              style={styles.actionButton}
-            />
-            <IconButton 
-              icon="clipboard-list-outline" 
-              iconColor="#334155" 
-              size={22} 
-              onPress={handleOpenDebug}
-              style={styles.actionButton}
-            />
-            <IconButton 
-              icon="logout-variant" 
-              iconColor="#B91C1C" 
-              size={22} 
-              onPress={handleLogout} 
-              style={styles.actionButton}
-            />
+            <TouchableOpacity
+              style={[styles.headerBtn, { backgroundColor: isOnline ? COLORS.successSoft : COLORS.dangerSoft }]}
+              onPress={() => Alert.alert('Estado', isOnline ? 'Online - Conectado al servidor' : 'Offline - Modo SQLite local')}
+            >
+              <MaterialCommunityIcons
+                name={isOnline ? 'wifi-check' : 'wifi-off'}
+                size={24}
+                color={isOnline ? COLORS.success : COLORS.danger}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerBtn} onPress={handleOpenDebug}>
+              <MaterialCommunityIcons name="database-sync-outline" size={24} color={COLORS.orange} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerBtn} onPress={handleLogout}>
+              <MaterialCommunityIcons name="logout-variant" size={24} color={COLORS.danger} />
+            </TouchableOpacity>
           </View>
         </View>
+      </View>
 
-        {/* Stats Card */}
-        <Surface style={styles.statsCard} elevation={1}>
-          <View style={styles.statsContent}>
-            <Text style={styles.statsTitle}>Resumen de Hoy</Text>
-            {loading ? (
-              <ActivityIndicator animating={true} color="#334155" />
-            ) : (
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <Text style={[styles.statValue, { color: '#15803D' }]}>{stats.presentes}</Text>
-                  <Text style={styles.statLabel}>Presentes</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <TouchableOpacity 
-                  style={styles.statItem} 
-                  onPress={() => navigation.navigate('Absentees')}
-                >
-                  <Text style={[styles.statValue, { color: '#B91C1C' }]}>{stats.faltas}</Text>
-                  <Text style={styles.statLabel}>Faltas</Text>
-                </TouchableOpacity>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={[styles.statValue, { color: '#F1C40F' }]}>{stats.tardanzas}</Text>
-                  <Text style={styles.statLabel}>Tardanzas</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={[styles.statValue, { color: '#2563EB' }]}>{stats.temprano ?? 0}</Text>
-                  <Text style={styles.statLabel}>Temprano</Text>
-                </View>
-              </View>
-            )}
-          </View>
-        </Surface>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.blue} />}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Stats strip ──────────────────────────────────────── */}
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          <Text style={styles.sectionLabel}>RESUMEN DE HOY</Text>
+          {loading ? (
+            <ActivityIndicator animating color={COLORS.blue} style={{ marginVertical: 20 }} />
+          ) : (
+            <View style={styles.statsRow}>
+              <StatCard value={stats.presentes} label="Presentes" color={COLORS.success} icon="account-check" />
+              <StatCard value={stats.faltas} label="Faltas" color={COLORS.danger} icon="account-remove" onPress={() => navigation.navigate('Absentees')} />
+              <StatCard value={stats.tardanzas} label="Tardanzas" color={COLORS.warning} icon="account-clock" />
+              <StatCard value={stats.temprano ?? 0} label="Temprano" color={COLORS.blue} icon="account-star" />
+            </View>
+          )}
+        </Animated.View>
 
-        <Text style={styles.sectionTitle}>Menú Principal</Text>
-
+        {/* ── Menu ─────────────────────────────────────────────── */}
+        <Text style={[styles.sectionLabel, { marginTop: 24 }]}>MODULOS</Text>
         <View style={styles.menuGrid}>
-          <MenuButton 
-            title="MARCACIÓN" 
-            icon="barcode-scan" 
-            color="#334155" 
+          {/* Full-width MARCACION */}
+          <MenuBtn
+            title="MARCACION"
+            icon="line-scan"
+            themeColor={COLORS.blue}
             onPress={() => navigation.navigate('Scan')}
-            fullWidth
+            solid
           />
-          <MenuButton 
-            title="PERSONAL" 
-            icon="account-group" 
-            color="#334155" 
+          <MenuBtn
+            title="PERSONAL"
+            icon="account-group"
+            themeColor={COLORS.purple}
             onPress={() => navigation.navigate('PersonalList')}
           />
-          <MenuButton 
-            title="CONFIGURACIÓN" 
-            icon="cog-outline" 
-            color="#334155" 
-            onPress={() => navigation.navigate('Config')}
-          />
-          <MenuButton 
-            title="CONTROL" 
-            icon="chart-bar" 
-            color="#334155" 
+          <MenuBtn
+            title="CONTROL"
+            icon="chart-bar"
+            themeColor={COLORS.orange}
             onPress={() => navigation.navigate('AttendanceControl')}
           />
+          <MenuBtn
+            title="CONFIG."
+            icon="tune-vertical"
+            themeColor={COLORS.magenta}
+            onPress={() => navigation.navigate('Config')}
+            fullWidth
+          />
+        </View>
+
+        {/* Footer Watermark */}
+        <View style={styles.footerContainer}>
+          <Image 
+            source={require('../../assets/icon.png')} 
+            style={styles.footerLogo} 
+            resizeMode="contain"
+          />
+          <Text style={styles.footerText}>PROYECTO ENLA - ASISTENCIA 2026</Text>
         </View>
       </ScrollView>
+
       {renderDebugModal()}
     </View>
   );
 };
 
+// ═══════════════════════════════════════════════════════════════
+//  Styles
+// ═══════════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F6F8' },
-  scrollContent: { padding: 20 },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 25,
-    marginTop: 10,
+  container: { flex: 1, backgroundColor: COLORS.bg },
+
+  // ── Top header ─────────────────────────────────────────────
+  topHeader: {
+    paddingTop: 48, paddingBottom: 18,
+    paddingHorizontal: 20,
   },
-  welcomeText: {
-    color: '#64748B',
-    fontSize: 12,
-  },
-  userName: {
-    color: '#0F172A',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  actionButton: {
-    backgroundColor: '#E2E8F0',
-    borderRadius: 6,
-    marginHorizontal: 2,
-  },
-  statsCard: {
-    borderRadius: 6,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 35,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-  },
-  statsContent: {
-    padding: 20,
-  },
-  statsTitle: {
-    color: '#0F172A',
-    fontSize: 15,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  statsRow: {
+  topHeaderInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
+  welcomeLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '800' },
+  userName: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', maxWidth: width * 0.55 },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  headerBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#E2E8F0',
+
+  // ── Scroll ─────────────────────────────────────────────────
+  scroll: { padding: 16, paddingBottom: 40 },
+  sectionLabel: {
+    color: COLORS.inkMid, fontSize: 13, fontWeight: '900',
+    letterSpacing: 1, textTransform: 'uppercase',
+    marginBottom: 12,
+    paddingLeft: 4,
   },
-  statValue: {
-    fontSize: 26,
-    fontWeight: 'bold',
+
+  // ── Stats ──────────────────────────────────────────────────
+  statsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  statCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12, borderTopWidth: 5,
+    padding: 12, alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  statLabel: {
-    color: '#64748B',
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '500',
+  statIconWrap: {
+    width: 46, height: 46, borderRadius: 23,
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 6,
   },
-  sectionTitle: {
-    color: '#0F172A',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    paddingLeft: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#334155',
-  },
+  statValue: { fontSize: 28, fontWeight: '900' },
+  statLabel: { color: COLORS.muted, fontSize: 10, fontWeight: '800', marginTop: 2, textAlign: 'center' },
+
+  // ── Menu ───────────────────────────────────────────────────
   menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 15,
+    gap: 12,
   },
-  menuItem: {
-    width: COLUMN_WIDTH,
-    height: 130,
-    borderRadius: 6,
-    overflow: 'hidden',
+  marcacionWrapper: {
+    width: '100%',
+    marginVertical: 6,
   },
-  fullWidthItem: {
+  menuBtnMarcacion: {
     width: '100%',
     height: 110,
-    marginBottom: 5,
+    backgroundColor: COLORS.blue,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  menuSurface: {
+  menuInnerMarcacion: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 15,
+    padding: 10,
   },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 6,
+  menuTitleMarcacion: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 15,
+    letterSpacing: 1,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  menuBtnGrid: {
+    width: COL,
+    height: 130,
+    borderRadius: 16,
+    borderWidth: 2.5,
+    backgroundColor: COLORS.white,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  menuInnerGrid: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    padding: 10,
+    zIndex: 2,
   },
-  menuTitle: {
-    color: '#0F172A',
+  menuTitleGrid: {
+    fontWeight: '900',
     fontSize: 13,
-    fontWeight: 'bold',
+    letterSpacing: 0.6,
     textAlign: 'center',
-    letterSpacing: 0.5,
+    marginTop: 8,
   },
-  // Debug modal styles
-  debugModal: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    margin: 20,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  watermarkIconWrap: {
+    position: 'absolute',
+    bottom: -22,
+    right: -22,
+    zIndex: 1,
+    opacity: 0.08,
   },
-  debugTitle: {
-    color: '#0F172A',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 15,
-  },
-  debugStatusCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 6,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 15,
-  },
-  debugRow: {
-    flexDirection: 'row',
+  footerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 32,
+    marginBottom: 20,
     gap: 8,
   },
-  debugStatusText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+  footerLogo: {
+    width: 60,
+    height: 60,
+    opacity: 0.25,
+    tintColor: '#94A3B8',
   },
-  debugSubtitle: {
-    color: '#64748B',
+  footerText: {
+    color: '#94A3B8',
     fontSize: 11,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 15,
-    gap: 6,
-  },
-  debugStatCol: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 6,
-    padding: 8,
-    alignItems: 'center',
-  },
-  debugStatNum: {
-    color: '#0F172A',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  debugStatLabel: {
-    color: '#64748B',
-    fontSize: 8,
-    marginTop: 2,
+    fontWeight: '900',
+    letterSpacing: 0.5,
     textAlign: 'center',
-    fontWeight: '500',
   },
-  queueItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 4,
-    padding: 8,
-    marginBottom: 4,
+
+  // ── Debug modal ────────────────────────────────────────────
+  debugModal: {
+    backgroundColor: COLORS.white,
+    padding: 20, margin: 16,
+    borderRadius: 16,
+    borderTopWidth: 5, borderTopColor: COLORS.blue,
   },
-  queueType: {
-    color: '#475569',
-    fontSize: 10,
-    fontWeight: 'bold',
+  debugHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14,
   },
-  queueDetail: {
-    color: '#0F172A',
-    fontSize: 10,
+  debugTitle: { color: COLORS.ink, fontSize: 15, fontWeight: '900' },
+  debugStatusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 8, borderWidth: 1.5, padding: 10, marginBottom: 14,
   },
-  debugActions: {
-    flexDirection: 'column',
-    gap: 8,
-    marginTop: 5,
+  debugStatusText: { fontSize: 12, fontWeight: '800' },
+  debugSubtitle: {
+    color: COLORS.muted, fontSize: 10, fontWeight: '900',
+    letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8,
   },
-  debugBtn: {
-    borderRadius: 6,
-  }
+  debugGrid: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  debugStat: {
+    flex: 1, backgroundColor: COLORS.surface,
+    borderRadius: 8, padding: 10, alignItems: 'center',
+    borderTopWidth: 3,
+  },
+  debugStatNum: { fontSize: 18, fontWeight: '900' },
+  debugStatLabel: { color: COLORS.muted, fontSize: 9, marginTop: 2, textAlign: 'center', fontWeight: '800' },
+  queueRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.warningSoft,
+    borderRadius: 6, padding: 8, marginBottom: 4,
+    borderWidth: 1.5, borderColor: COLORS.warningBorder,
+  },
+  queueType: { color: COLORS.warning, fontSize: 10, fontWeight: '900' },
+  queueDetail: { color: COLORS.inkLight, fontSize: 10, flex: 1, fontWeight: '700' },
 });
 
 export default HomeScreen;
